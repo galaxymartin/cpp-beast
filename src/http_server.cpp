@@ -14,13 +14,46 @@ namespace http = beast::http;
 namespace net = boost::asio;
 using tcp = net::ip::tcp;
 
+// Common HTTP error messages and headers
+constexpr std::string_view ERR_INVALID_JSON = "invalid json";
+constexpr std::string_view ERR_INVALID_ID = "invalid id";
+constexpr std::string_view ERR_BOOK_NOT_FOUND = "book not found";
+constexpr std::string_view ERR_NOT_FOUND = "not found";
+constexpr std::string_view CONTENT_TYPE_JSON = "application/json";
+
 static void send_json_error(http::response<http::string_body>& res, http::status status, std::string_view message) {
   boost::json::object obj;
   obj["error"] = std::string(message);
   res.result(status);
-  res.set(http::field::content_type, "application/json");
+  res.set(http::field::content_type, CONTENT_TYPE_JSON);
   res.body() = boost::json::serialize(obj);
   res.prepare_payload();
+}
+
+// Send a pre-serialized JSON value as a response (avoids repeating headers/body setup)
+static void send_json_value(http::response<http::string_body>& res, http::status status, boost::json::value const& v) {
+  res.result(status);
+  res.set(http::field::content_type, CONTENT_TYPE_JSON);
+  res.body() = boost::json::serialize(v);
+  res.prepare_payload();
+}
+
+// Parse an ID suffix from a request target of the form '/books/{id}'.
+// Returns true and sets `id_out` on success, false otherwise.
+static bool parse_book_id(std::string_view target, uint64_t &id_out) {
+  constexpr std::string_view prefix = "/books/";
+  if (target.rfind(prefix, 0) != 0) return false;
+  auto idstr = target.substr(prefix.size());
+  if (idstr.empty()) return false;
+  int64_t tmp = 0;
+  auto parse_res = std::from_chars(idstr.data(), idstr.data() + idstr.size(), tmp);
+  if (parse_res.ec != std::errc() || parse_res.ptr == idstr.data() || tmp < 0) return false;
+  id_out = static_cast<uint64_t>(tmp);
+  return true;
+}
+
+static bool parse_json_body(std::string const& body, boost::json::value &out) {
+  try { out = boost::json::parse(body); return true; } catch (...) { return false; }
 }
 
 static bool validate_book_for_create(boost::json::value const& jv, std::string& err) {
@@ -53,23 +86,12 @@ static void handle_request(BookRepository& repo, http::request<http::string_body
     // GET /books/{id}
     if (req.method() == http::verb::get) {
       std::string_view target{req.target()};
-      if (target.rfind("/books/", 0) == 0) {
-        auto idstr = target.substr(std::strlen("/books/"));
-        uint64_t id = 0;
-        int64_t tmp = 0;
-        auto parse_res = std::from_chars(idstr.data(), idstr.data() + idstr.size(), tmp);
-        if (parse_res.ec != std::errc() || parse_res.ptr == idstr.data() || tmp < 0) {
-          send_json_error(res, http::status::bad_request, "invalid id");
-          return;
-        }
-        id = static_cast<uint64_t>(tmp);
-        auto ob = repo.get(id);
-        if (!ob) { BOOST_LOG_TRIVIAL(info) << "Book not found id=" << id; send_json_error(res, http::status::not_found, "book not found"); return; }
+      uint64_t id = 0;
+      if (parse_book_id(target, id)) {
+      auto ob = repo.get(id);
+      if (!ob) { BOOST_LOG_TRIVIAL(info) << "Book not found id=" << id; send_json_error(res, http::status::not_found, ERR_BOOK_NOT_FOUND); return; }
         boost::json::value jv; to_json(jv, *ob);
-        res.result(http::status::ok);
-        res.set(http::field::content_type, "application/json");
-        res.body() = boost::json::serialize(jv);
-        res.prepare_payload();
+        send_json_value(res, http::status::ok, jv);
         return;
       }
     }
@@ -77,44 +99,30 @@ static void handle_request(BookRepository& repo, http::request<http::string_body
     // POST /books
     if (req.method() == http::verb::post && req.target() == "/books") {
       boost::json::value jv;
-      try { jv = boost::json::parse(req.body()); } catch (std::exception const&) { send_json_error(res, http::status::bad_request, "invalid json"); return; }
+      if (!parse_json_body(req.body(), jv)) { send_json_error(res, http::status::bad_request, ERR_INVALID_JSON); return; }
       std::string verr;
       if (!validate_book_for_create(jv, verr)) { send_json_error(res, http::status::bad_request, verr); return; }
       Book b; from_json(jv, b);
       auto added = repo.add(b);
       boost::json::value out; to_json(out, added);
       BOOST_LOG_TRIVIAL(info) << "Book created id=" << added.id;
-      res.result(http::status::created);
-      res.set(http::field::content_type, "application/json");
-      res.body() = boost::json::serialize(out);
-      res.prepare_payload();
+      send_json_value(res, http::status::created, out);
       return;
     }
 
     // PUT /books/{id}
     if (req.method() == http::verb::put) {
       std::string_view target{req.target()};
-      if (target.rfind("/books/", 0) == 0) {
-        auto idstr = target.substr(std::strlen("/books/"));
-        uint64_t id = 0;
-        int64_t tmp = 0;
-        auto parse_res = std::from_chars(idstr.data(), idstr.data() + idstr.size(), tmp);
-        if (parse_res.ec != std::errc() || parse_res.ptr == idstr.data() || tmp < 0) {
-          send_json_error(res, http::status::bad_request, "invalid id");
-          return;
-        }
-        id = static_cast<uint64_t>(tmp);
+      uint64_t id = 0;
+      if (parse_book_id(target, id)) {
         boost::json::value jv;
-        try { jv = boost::json::parse(req.body()); } catch (std::exception const&) { send_json_error(res, http::status::bad_request, "invalid json"); return; }
+        if (!parse_json_body(req.body(), jv)) { send_json_error(res, http::status::bad_request, ERR_INVALID_JSON); return; }
         Book b; from_json(jv, b);
         auto updated = repo.update(id, b);
         if (!updated) { BOOST_LOG_TRIVIAL(info) << "Book update not found id=" << id; send_json_error(res, http::status::not_found, "book not found"); return; }
         boost::json::value out; to_json(out, *updated);
         BOOST_LOG_TRIVIAL(info) << "Book updated id=" << id;
-        res.result(http::status::ok);
-        res.set(http::field::content_type, "application/json");
-        res.body() = boost::json::serialize(out);
-        res.prepare_payload();
+        send_json_value(res, http::status::ok, out);
         return;
       }
     }
@@ -122,19 +130,11 @@ static void handle_request(BookRepository& repo, http::request<http::string_body
     // DELETE /books/{id}
     if (req.method() == http::verb::delete_) {
       std::string_view target{req.target()};
-      if (target.rfind("/books/", 0) == 0) {
-        auto idstr = target.substr(std::strlen("/books/"));
-        uint64_t id = 0;
-        int64_t tmp = 0;
-        auto parse_res = std::from_chars(idstr.data(), idstr.data() + idstr.size(), tmp);
-        if (parse_res.ec != std::errc() || parse_res.ptr == idstr.data() || tmp < 0) {
-          send_json_error(res, http::status::bad_request, "invalid id");
-          return;
-        }
-        id = static_cast<uint64_t>(tmp);
-        auto removed = repo.remove(id);
+      uint64_t id = 0;
+      if (parse_book_id(target, id)) {
+      auto removed = repo.remove(id);
         BOOST_LOG_TRIVIAL(info) << "Book delete id=" << id << " removed=" << removed;
-        if (!removed) { send_json_error(res, http::status::not_found, "book not found"); return; }
+      if (!removed) { send_json_error(res, http::status::not_found, ERR_BOOK_NOT_FOUND); return; }
         res.result(http::status::no_content);
         res.prepare_payload();
         return;
@@ -142,7 +142,7 @@ static void handle_request(BookRepository& repo, http::request<http::string_body
     }
 
     // Not found
-    send_json_error(res, http::status::not_found, "not found");
+    send_json_error(res, http::status::not_found, ERR_NOT_FOUND);
     return;
   } catch (std::exception const& e) {
     BOOST_LOG_TRIVIAL(error) << "HTTP handler exception: " << e.what();

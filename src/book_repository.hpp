@@ -23,4 +23,8 @@ private:
   uint64_t next_id_ = 1;
   std::string persist_file_;
   void load_from_file();
+  // Build JSON snapshot from `store_`. MUST be called while holding the lock.
+  boost::json::array build_snapshot_unlocked() const;
+  // Write a snapshot to `persist_file_` (does not take locks).
+  void write_snapshot(boost::json::array const& arr) const;
 };

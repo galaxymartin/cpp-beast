@@ -11,13 +11,9 @@ Book BookRepository::add(Book b) {
   BOOST_LOG_TRIVIAL(info) << "BookRepository::add id=" << b.id << " title='" << b.title << "'";
   if (!persist_file_.empty()) {
     // create snapshot while holding lock, then write file after unlocking to avoid deadlock
-    boost::json::array arr;
-    for (auto const& [k, v] : store_) { boost::json::value jv; to_json(jv, v); arr.push_back(jv); }
+    auto arr = build_snapshot_unlocked();
     lock.unlock();
-    try {
-      std::ofstream ofs(persist_file_, std::ios::trunc);
-      if (ofs) ofs << boost::json::serialize(arr);
-    } catch (...) {}
+    write_snapshot(arr);
   }
   return b;
 }
@@ -56,13 +52,9 @@ bool BookRepository::remove(uint64_t id) {
   auto removed = store_.erase(id) > 0;
   BOOST_LOG_TRIVIAL(info) << "BookRepository::remove id=" << id << " removed=" << removed;
   if (removed && !persist_file_.empty()) {
-    boost::json::array arr;
-    for (auto const& [k, v] : store_) { boost::json::value jv; to_json(jv, v); arr.push_back(jv); }
+    auto arr = build_snapshot_unlocked();
     lock.unlock();
-    try {
-      std::ofstream ofs(persist_file_, std::ios::trunc);
-      if (ofs) ofs << boost::json::serialize(arr);
-    } catch (...) {}
+    write_snapshot(arr);
   }
   return removed;
 }
@@ -91,6 +83,19 @@ void BookRepository::load_from_file() {
   } catch (...) {
     // ignore load errors
   }
+}
+
+boost::json::array BookRepository::build_snapshot_unlocked() const {
+  boost::json::array arr;
+  for (auto const& [k, v] : store_) { boost::json::value jv; to_json(jv, v); arr.push_back(jv); }
+  return arr;
+}
+
+void BookRepository::write_snapshot(boost::json::array const& arr) const {
+  try {
+    std::ofstream ofs(persist_file_, std::ios::trunc);
+    if (ofs) ofs << boost::json::serialize(arr);
+  } catch (...) {}
 }
 
 // Note: saving is done by callers without holding the mutex to avoid deadlocks.
