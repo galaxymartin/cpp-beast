@@ -1,0 +1,13 @@
+{
+  "name": "cpp-playground",
+  "version": "1.0.1",
+  "builtin-baseline": "c3867e714dd3a51c272826eea77267876517ed99",
+  "dependencies": [
+    "boost-asio",
+    "boost-json",
+    "boost-log",
+    "gtest",
+    "boost-regex",
+    "boost-beast"
+  ]
+}

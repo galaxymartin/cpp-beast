@@ -1,0 +1,39 @@
+{
+    "version": 2,
+    "configurePresets": [
+        {
+            "name": "default",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+            }
+        },
+        {
+            "name": "GCC-15.2-debug",
+            "displayName": "GCC 15.2.1 x86_64-redhat-linux (Debug)",
+            "inherits": [
+                "default"
+            ],
+            "description": "Using compilers: C = /usr/bin/gcc, CXX = /usr/bin/g++",            
+            "cacheVariables": {
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/install/${presetName}",               
+                "CMAKE_CXX_COMPILER": "/usr/bin/g++",
+                "CMAKE_BUILD_TYPE": "Debug"         
+            }
+        },
+        {
+            "name": "GCC-15.2-release",
+            "displayName": "GCC 15.2.1 x86_64-redhat-linux (Release)",
+            "inherits": [
+                "default"
+            ],
+            "description": "Using compilers: C = /usr/bin/gcc, CXX = /usr/bin/g++",            
+            "cacheVariables": {
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/install/${presetName}",               
+                "CMAKE_CXX_COMPILER": "/usr/bin/g++",
+                "CMAKE_BUILD_TYPE": "Release"         
+            }
+        }
+    ]
+}
