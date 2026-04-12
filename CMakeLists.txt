@@ -71,10 +71,10 @@ endif()
 
 # Apply sanitizer per-target if requested
 target_compile_options(book_service PRIVATE
-  $<$<BOOL:${ENABLE_ADDRESS_SANITIZER}>:${SANITIZE_CXX_FLAGS}>
+  "$<$<BOOL:${ENABLE_ADDRESS_SANITIZER}>:${SANITIZE_CXX_FLAGS}>"
 )
 target_link_options(book_service PRIVATE
-  $<$<BOOL:${ENABLE_ADDRESS_SANITIZER}>:${SANITIZE_LINK_FLAGS}>
+  "$<$<BOOL:${ENABLE_ADDRESS_SANITIZER}>:${SANITIZE_LINK_FLAGS}>"
 )
 
 add_executable(server src/main.cpp src/http_server.cpp)

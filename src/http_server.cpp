@@ -6,15 +6,17 @@
 #include <boost/log/trivial.hpp>
 #include <set>
 #include <mutex>
+#include <charconv>
+#include <string_view>
 
 namespace beast = boost::beast;
 namespace http = beast::http;
 namespace net = boost::asio;
 using tcp = net::ip::tcp;
 
-static void send_json_error(http::response<http::string_body>& res, http::status status, std::string message) {
+static void send_json_error(http::response<http::string_body>& res, http::status status, std::string_view message) {
   boost::json::object obj;
-  obj["error"] = message;
+  obj["error"] = std::string(message);
   res.result(status);
   res.set(http::field::content_type, "application/json");
   res.body() = boost::json::serialize(obj);
@@ -50,10 +52,17 @@ static void handle_request(BookRepository& repo, http::request<http::string_body
 
     // GET /books/{id}
     if (req.method() == http::verb::get) {
-      std::string target = std::string(req.target());
+      std::string_view target{req.target()};
       if (target.rfind("/books/", 0) == 0) {
-        auto idstr = target.substr(strlen("/books/"));
-        uint64_t id = std::stoull(idstr);
+        auto idstr = target.substr(std::strlen("/books/"));
+        uint64_t id = 0;
+        int64_t tmp = 0;
+        auto parse_res = std::from_chars(idstr.data(), idstr.data() + idstr.size(), tmp);
+        if (parse_res.ec != std::errc() || parse_res.ptr == idstr.data() || tmp < 0) {
+          send_json_error(res, http::status::bad_request, "invalid id");
+          return;
+        }
+        id = static_cast<uint64_t>(tmp);
         auto ob = repo.get(id);
         if (!ob) { BOOST_LOG_TRIVIAL(info) << "Book not found id=" << id; send_json_error(res, http::status::not_found, "book not found"); return; }
         boost::json::value jv; to_json(jv, *ob);
@@ -84,10 +93,17 @@ static void handle_request(BookRepository& repo, http::request<http::string_body
 
     // PUT /books/{id}
     if (req.method() == http::verb::put) {
-      std::string target = std::string(req.target());
+      std::string_view target{req.target()};
       if (target.rfind("/books/", 0) == 0) {
-        auto idstr = target.substr(strlen("/books/"));
-        uint64_t id = std::stoull(idstr);
+        auto idstr = target.substr(std::strlen("/books/"));
+        uint64_t id = 0;
+        int64_t tmp = 0;
+        auto parse_res = std::from_chars(idstr.data(), idstr.data() + idstr.size(), tmp);
+        if (parse_res.ec != std::errc() || parse_res.ptr == idstr.data() || tmp < 0) {
+          send_json_error(res, http::status::bad_request, "invalid id");
+          return;
+        }
+        id = static_cast<uint64_t>(tmp);
         boost::json::value jv;
         try { jv = boost::json::parse(req.body()); } catch (std::exception const&) { send_json_error(res, http::status::bad_request, "invalid json"); return; }
         Book b; from_json(jv, b);
@@ -105,10 +121,17 @@ static void handle_request(BookRepository& repo, http::request<http::string_body
 
     // DELETE /books/{id}
     if (req.method() == http::verb::delete_) {
-      std::string target = std::string(req.target());
+      std::string_view target{req.target()};
       if (target.rfind("/books/", 0) == 0) {
-        auto idstr = target.substr(strlen("/books/"));
-        uint64_t id = std::stoull(idstr);
+        auto idstr = target.substr(std::strlen("/books/"));
+        uint64_t id = 0;
+        int64_t tmp = 0;
+        auto parse_res = std::from_chars(idstr.data(), idstr.data() + idstr.size(), tmp);
+        if (parse_res.ec != std::errc() || parse_res.ptr == idstr.data() || tmp < 0) {
+          send_json_error(res, http::status::bad_request, "invalid id");
+          return;
+        }
+        id = static_cast<uint64_t>(tmp);
         auto removed = repo.remove(id);
         BOOST_LOG_TRIVIAL(info) << "Book delete id=" << id << " removed=" << removed;
         if (!removed) { send_json_error(res, http::status::not_found, "book not found"); return; }
@@ -149,7 +172,7 @@ void run_server(unsigned short port, BookRepository& repo, unsigned thread_count
         if (!ec) {
           auto sock = std::make_shared<tcp::socket>(std::move(socket));
           {
-            std::lock_guard lk(sessions_mutex);
+            std::scoped_lock lk(sessions_mutex);
             sessions.insert(sock);
           }
           // Post session handling onto the io_context so worker threads execute it.
@@ -168,7 +191,7 @@ void run_server(unsigned short port, BookRepository& repo, unsigned thread_count
               BOOST_LOG_TRIVIAL(error) << "Session error: " << e.what();
             }
             {
-              std::lock_guard lk(sessions_mutex);
+              std::scoped_lock lk(sessions_mutex);
               sessions.erase(sock);
             }
           });
