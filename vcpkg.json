@@ -6,8 +6,7 @@
     "boost-asio",
     "boost-json",
     "boost-log",
-    "gtest",
-    "boost-regex",
-    "boost-beast"
+    "boost-beast",
+    "gtest"
   ]
 }
