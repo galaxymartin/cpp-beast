@@ -10,7 +10,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 option(ENABLE_ADDRESS_SANITIZER "Build with AddressSanitizer for leak/memory checking" OFF)
-option(ENABLE_AVX512 "Enable AVX512 optimizations" ON)
 option(USE_MOLD "Use mold linker by setting CMAKE_LINKER_TYPE" ON)
 
 if(USE_MOLD)
@@ -33,14 +32,6 @@ find_package(boost_json CONFIG QUIET)
 
 include(GoogleTest)
 
-# Config-specific sensible flags (avoid -s here)
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0")
-
-if(ENABLE_AVX512)
-  add_compile_options(-mavx512f)
-endif()
-
 set(SANITIZE_CXX_FLAGS -fsanitize=address -fno-omit-frame-pointer -g -O1)
 set(SANITIZE_LINK_FLAGS -fsanitize=address)
 
@@ -55,9 +46,6 @@ target_compile_features(book_service PUBLIC cxx_std_20)
 
 # Link basic deps per-target
 target_link_libraries(book_service PRIVATE Threads::Threads)
-if(OpenMP_CXX_FOUND)
-  target_link_libraries(book_service PRIVATE OpenMP::OpenMP_CXX)
-endif()
 
 # Prefer imported Boost targets when available
 if(TARGET Boost::system)
