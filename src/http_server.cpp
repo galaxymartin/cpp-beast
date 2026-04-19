@@ -7,6 +7,7 @@
 #include <boost/log/trivial.hpp>
 #include <set>
 #include <mutex>
+#include <memory>
 
 namespace beast = boost::beast;
 namespace http = beast::http;
@@ -132,6 +133,7 @@ struct ServerControl::Impl {
   unsigned thread_count = 0;
   BookRepository* repo = nullptr;
   bool running = false;
+  std::unique_ptr<net::signal_set> signals;
   Impl(unsigned short port): acceptor(ioc, tcp::endpoint{tcp::v4(), port}) {}
 };
 
@@ -202,6 +204,7 @@ std::shared_ptr<ServerControl> start_server(unsigned short port, BookRepository&
 
 void ServerControl::stop() {
   if (!impl) return;
+  BOOST_LOG_TRIVIAL(info) << "ServerControl::stop called";
   try {
     impl->acceptor.close();
   } catch (...) {}
@@ -227,9 +230,11 @@ void run_server(unsigned short port, BookRepository& repo, unsigned thread_count
   auto ctrl = start_server(port, repo, thread_count);
   if (!ctrl) return;
   try {
-    net::signal_set signals(ctrl->impl->ioc, SIGINT, SIGTERM);
-    signals.async_wait([ctrl](beast::error_code /*ec*/, int /*signo*/) {
-      BOOST_LOG_TRIVIAL(info) << "Shutdown requested via signal";
+    // Store the signal_set on the control impl so it lives for the server lifetime.
+    ctrl->impl->signals = std::make_unique<net::signal_set>(ctrl->impl->ioc, SIGINT, SIGTERM);
+    BOOST_LOG_TRIVIAL(info) << "Registering signal handler";
+    ctrl->impl->signals->async_wait([ctrl](beast::error_code ec, int signo) {
+      BOOST_LOG_TRIVIAL(info) << "Shutdown requested via signal " << signo << " ec=" << ec.message();
       ctrl->stop();
     });
   } catch (...) {}

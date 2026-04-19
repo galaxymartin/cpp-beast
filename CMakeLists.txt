@@ -101,7 +101,14 @@ if(TARGET Boost::system)
   endif()  
 endif()
 
-add_executable(tests tests/test_repository.cpp tests/test_repository_update.cpp tests/test_persistence.cpp tests/test_integration.cpp tests/test_integration_concurrency.cpp tests/test_http_utils.cpp)
+add_executable(tests tests/test_repository.cpp 
+  tests/test_repository_update.cpp 
+  tests/test_persistence.cpp 
+  tests/test_integration.cpp 
+  tests/test_integration_concurrency.cpp 
+  tests/test_http_utils.cpp   
+  tests/test_http_server_put_edgecases.cpp)
+
 target_compile_features(tests PRIVATE cxx_std_20)
 target_link_libraries(tests PRIVATE book_service)
 if(TARGET GTest::gtest_main)
