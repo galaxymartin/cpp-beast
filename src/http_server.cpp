@@ -122,98 +122,116 @@ static void handle_request(BookRepository& repo, http::request<http::string_body
   }
 }
 
-void run_server(unsigned short port, BookRepository& repo, unsigned thread_count) {
+// Internal server state shared between control handle and running server
+struct ServerControl::Impl {
+  net::io_context ioc{1};
+  tcp::acceptor acceptor{ioc};
+  std::mutex sessions_mutex;
+  std::set<std::shared_ptr<tcp::socket>> sessions;
+  std::vector<std::thread> workers;
+  unsigned thread_count = 0;
+  BookRepository* repo = nullptr;
+  bool running = false;
+  Impl(unsigned short port): acceptor(ioc, tcp::endpoint{tcp::v4(), port}) {}
+};
+
+static void do_session(std::shared_ptr<tcp::socket> sock, BookRepository& repo,
+                       std::set<std::shared_ptr<tcp::socket>>& sessions,
+                       std::mutex& sessions_mutex) {
   try {
-    net::io_context ioc{1};
-    tcp::acceptor acceptor{ioc, tcp::endpoint{tcp::v4(), port}};
-    std::cout << "Listening on port " << port << "\n";
-
-    if (thread_count == 0) {
-      thread_count = std::max(1u, std::thread::hardware_concurrency());
-    }
-
-    // Accept loop: async accept sockets and post synchronous session handlers to the io_context.
-    std::function<void()> do_accept;
-    // track active sessions so we can close them on shutdown
-    std::mutex sessions_mutex;
-    std::set<std::shared_ptr<tcp::socket>> sessions;
-
-    do_accept = [&]() {
-      acceptor.async_accept([&](beast::error_code ec, tcp::socket socket) {
-        if (!ec) {
-          auto sock = std::make_shared<tcp::socket>(std::move(socket));
-          {
-            std::scoped_lock lk(sessions_mutex);
-            sessions.insert(sock);
-          }
-          // Post session handling onto the io_context so worker threads execute it.
-          net::post(ioc, [sock, &repo, &sessions, &sessions_mutex]() {
-            try {
-              beast::flat_buffer buffer;
-              http::request<http::string_body> req;
-              http::read(*sock, buffer, req);
-              http::response<http::string_body> res{http::status::ok, req.version()};
-              res.set(http::field::server, "book-service/0.1");
-              handle_request(repo, std::move(req), res);
-              http::write(*sock, res);
-              beast::error_code ec2;
-              sock->shutdown(tcp::socket::shutdown_send, ec2);
-            } catch (std::exception const& e) {
-              BOOST_LOG_TRIVIAL(error) << "Session error: " << e.what();
-            }
-            {
-              std::scoped_lock lk(sessions_mutex);
-              sessions.erase(sock);
-            }
-          });
-        } else {
-          BOOST_LOG_TRIVIAL(error) << "Accept error: " << ec.message();
-        }
-        if (acceptor.is_open()) do_accept();
-      });
-    };
-
-    if (acceptor.is_open()) do_accept();
-
-    // Setup signal handling for graceful shutdown (Ctrl+C)
-    net::signal_set signals(ioc, SIGINT, SIGTERM);
-    signals.async_wait([&](beast::error_code /*ec*/, int /*signo*/) {
-      BOOST_LOG_TRIVIAL(info) << "Shutdown requested via signal";
-      try {
-        acceptor.close();
-      } catch (...) {}
-
-      // Close active sessions to unblock any blocked reads/writes
-      std::vector<std::shared_ptr<tcp::socket>> copy;
-      {
-        std::lock_guard lk(sessions_mutex);
-        copy.assign(sessions.begin(), sessions.end());
-      }
-      BOOST_LOG_TRIVIAL(info) << "Closing " << copy.size() << " active sessions";
-      for (auto& s : copy) {
-        try {
-          beast::error_code ec2;
-          s->shutdown(tcp::socket::shutdown_both, ec2);
-          s->close(ec2);
-        } catch (...) {}
-      }
-
-      ioc.stop();
-    });
-
-    // Launch worker threads
-    std::vector<std::thread> workers;
-    for (unsigned i = 1; i < thread_count; ++i) {
-      workers.emplace_back([&ioc]() { try { ioc.run(); } catch (...) {} });
-    }
-
-    // Run on this thread as well (blocks)
-    try { ioc.run(); } catch (...) {}
-
-    // join workers on shutdown
-    for (auto& t : workers) if (t.joinable()) t.join();
-    BOOST_LOG_TRIVIAL(info) << "Server stopped";
+    beast::flat_buffer buffer;
+    http::request<http::string_body> req;
+    http::read(*sock, buffer, req);
+    http::response<http::string_body> res{http::status::ok, req.version()};
+    res.set(http::field::server, "book-service/0.1");
+    handle_request(repo, std::move(req), res);
+    http::write(*sock, res);
+    beast::error_code ec2;
+    sock->shutdown(tcp::socket::shutdown_send, ec2);
   } catch (std::exception const& e) {
-    std::cerr << "Server error: " << e.what() << std::endl;
+    BOOST_LOG_TRIVIAL(error) << "Session error: " << e.what();
   }
+  {
+    std::scoped_lock lk(sessions_mutex);
+    sessions.erase(sock);
+  }
+}
+
+std::shared_ptr<ServerControl> start_server(unsigned short port, BookRepository& repo, unsigned thread_count) {
+  auto ctrl = std::make_shared<ServerControl>();
+  ctrl->impl = std::make_shared<ServerControl::Impl>(port);
+  ctrl->impl->repo = &repo;
+  if (thread_count == 0) thread_count = std::max(1u, std::thread::hardware_concurrency());
+  ctrl->impl->thread_count = thread_count;
+
+  auto& impl = *ctrl->impl;
+  std::cout << "Listening on port " << impl.acceptor.local_endpoint().port() << "\n";
+
+  auto do_accept = std::make_shared<std::function<void()>>();
+  *do_accept = [ctrl, do_accept]() {
+    auto impl = ctrl->impl; // keep shared ownership inside callbacks
+    impl->acceptor.async_accept([ctrl, do_accept](beast::error_code ec, tcp::socket socket) {
+      auto impl = ctrl->impl;
+      if (!ec) {
+        auto sock = std::make_shared<tcp::socket>(std::move(socket));
+        {
+          std::scoped_lock lk(impl->sessions_mutex);
+          impl->sessions.insert(sock);
+        }
+        net::post(impl->ioc, [sock, impl]() { do_session(sock, *impl->repo, impl->sessions, impl->sessions_mutex); });
+      } else {
+        BOOST_LOG_TRIVIAL(error) << "Accept error: " << ec.message();
+      }
+      if (impl->acceptor.is_open()) (*do_accept)();
+    });
+  };
+
+  if (impl.acceptor.is_open()) (*do_accept)();
+
+  // Note: signal handling is performed by the blocking wrapper `run_server`
+  // so that callers using `start_server` (e.g. tests) can control the server
+  // lifecycle programmatically without racing with process signals.
+
+  // Launch worker threads (all run the io_context)
+  for (unsigned i = 0; i < impl.thread_count; ++i) {
+    impl.workers.emplace_back([&impl]() { try { impl.ioc.run(); } catch (...) {} });
+  }
+
+  return ctrl;
+}
+
+void ServerControl::stop() {
+  if (!impl) return;
+  try {
+    impl->acceptor.close();
+  } catch (...) {}
+  std::vector<std::shared_ptr<tcp::socket>> copy;
+  {
+    std::lock_guard lk(impl->sessions_mutex);
+    copy.assign(impl->sessions.begin(), impl->sessions.end());
+  }
+  for (auto& s : copy) {
+    try { beast::error_code ec2; s->shutdown(tcp::socket::shutdown_both, ec2); s->close(ec2); } catch(...) {}
+  }
+  impl->ioc.stop();
+}
+
+void ServerControl::wait() {
+  if (!impl) return;
+  try {
+    for (auto& t : impl->workers) if (t.joinable()) t.join();
+  } catch(...) {}
+}
+
+void run_server(unsigned short port, BookRepository& repo, unsigned thread_count) {
+  auto ctrl = start_server(port, repo, thread_count);
+  if (!ctrl) return;
+  try {
+    net::signal_set signals(ctrl->impl->ioc, SIGINT, SIGTERM);
+    signals.async_wait([ctrl](beast::error_code /*ec*/, int /*signo*/) {
+      BOOST_LOG_TRIVIAL(info) << "Shutdown requested via signal";
+      ctrl->stop();
+    });
+  } catch (...) {}
+  ctrl->wait();
 }
