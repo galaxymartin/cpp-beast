@@ -4,6 +4,8 @@
 #include <boost/beast.hpp>
 #include <thread>
 
+namespace net = boost::asio;
+
 TEST(ServerControl, StartStopWait) {
   unsigned short port = 18102;
   BookRepository repo;
