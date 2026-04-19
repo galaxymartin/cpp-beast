@@ -49,9 +49,8 @@ TEST(Integration, Concurrency) {
   unsigned short port = 18081;
   BookRepository repo;
 
-  std::thread server_thread([&](){ run_server(port, repo, 4); });
-  server_thread.detach();
-
+  auto ctrl = start_server(port, repo, 4);
+  ASSERT_TRUE(ctrl);
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
   const int clients = 8;
@@ -74,4 +73,7 @@ TEST(Integration, Concurrency) {
   auto [s2, b2] = do_request("127.0.0.1", port, http::verb::get, "/books");
   EXPECT_EQ(s2, 200);
   for (int i = 0; i < clients; ++i) EXPECT_NE(b2.find("Book" + std::to_string(i)), std::string::npos);
+
+  ctrl->stop();
+  ctrl->wait();
 }

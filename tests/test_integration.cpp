@@ -48,9 +48,9 @@ TEST(Integration, SimpleCRUD) {
   unsigned short port = 18080;
   BookRepository repo; // in-memory repo
 
-  // start server in background (detached) so test can perform requests
-  std::thread server_thread([&](){ run_server(port, repo); });
-  server_thread.detach();
+  // start server (non-blocking) so test can perform requests
+  auto ctrl = start_server(port, repo);
+  ASSERT_TRUE(ctrl);
 
   // wait briefly for server to start
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -102,4 +102,7 @@ TEST(Integration, SimpleCRUD) {
   // GET /books/{id} now 404
   auto [s6, b6] = do_request("127.0.0.1", port, http::verb::get, "/books/" + std::to_string(id));
   EXPECT_EQ(s6, 404);
+
+  ctrl->stop();
+  ctrl->wait();
 }
