@@ -1,5 +1,6 @@
 #include "book_repository.hpp"
 #include <fstream>
+#include <filesystem>
 #include <boost/json/src.hpp>
 #include <boost/json.hpp>
 #include <boost/log/trivial.hpp>
@@ -35,6 +36,15 @@ std::optional<Book> BookRepository::update(uint64_t id, Book const& b) {
   nb.id = id;
   it->second = nb;
   BOOST_LOG_TRIVIAL(info) << "BookRepository::update id=" << id << " title='" << nb.title << "'";
+  if (!persist_file_.empty()) {
+    auto arr = build_snapshot_unlocked();
+    lock.unlock();
+    try {
+      write_snapshot(arr);
+    } catch (std::exception const& e) {
+      BOOST_LOG_TRIVIAL(error) << "Failed to write snapshot after update: " << e.what();
+    }
+  }
   return nb;
 }
 
@@ -80,8 +90,10 @@ void BookRepository::load_from_file() {
       store_.emplace(b.id, b);
       if (b.id >= next_id_) next_id_ = b.id + 1;
     }
+  } catch (std::exception const& e) {
+    BOOST_LOG_TRIVIAL(error) << "Failed to load persist file " << persist_file_ << ": " << e.what();
   } catch (...) {
-    // ignore load errors
+    BOOST_LOG_TRIVIAL(error) << "Failed to load persist file " << persist_file_ << ": unknown error";
   }
 }
 
@@ -93,9 +105,25 @@ boost::json::array BookRepository::build_snapshot_unlocked() const {
 
 void BookRepository::write_snapshot(boost::json::array const& arr) const {
   try {
-    std::ofstream ofs(persist_file_, std::ios::trunc);
-    if (ofs) ofs << boost::json::serialize(arr);
-  } catch (...) {}
+    std::filesystem::path p(persist_file_);
+    std::string tmp = p.string() + ".tmp";
+    {
+      std::ofstream ofs(tmp, std::ios::trunc);
+      if (!ofs) throw std::runtime_error("failed to open temp file for write");
+      ofs << boost::json::serialize(arr);
+      if (!ofs) throw std::runtime_error("failed while writing temp file");
+    }
+    std::error_code ec;
+    std::filesystem::rename(tmp, p, ec);
+    if (ec) {
+      // try remove tmp and report
+      std::filesystem::remove(tmp);
+      throw std::runtime_error(std::string("rename failed: ") + ec.message());
+    }
+  } catch (std::exception const& e) {
+    BOOST_LOG_TRIVIAL(error) << "BookRepository::write_snapshot error: " << e.what();
+    throw;
+  }
 }
 
 // Note: saving is done by callers without holding the mutex to avoid deadlocks.
