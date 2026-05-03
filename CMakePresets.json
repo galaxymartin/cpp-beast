@@ -10,8 +10,8 @@
             }
         },
         {
-            "name": "GCC-15.2-debug",
-            "displayName": "GCC 15.2.1 x86_64-redhat-linux (Debug)",
+            "name": "GCC-16.1-debug",
+            "displayName": "GCC 16.1.0 x86_64-redhat-linux (Debug)",
             "inherits": [
                 "default"
             ],
@@ -23,8 +23,8 @@
             }
         },
         {
-            "name": "GCC-15.2-release",
-            "displayName": "GCC 15.2.1 x86_64-redhat-linux (Release)",
+            "name": "GCC-16.1-release",
+            "displayName": "GCC 16.1.0 x86_64-redhat-linux (Release)",
             "inherits": [
                 "default"
             ],
