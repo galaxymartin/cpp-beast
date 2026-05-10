@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.31)
+cmake_minimum_required(VERSION 4.3)
 project(cpp-beast VERSION 0.1.0 LANGUAGES CXX)
 
 include(CTest)
@@ -24,11 +24,7 @@ endif()
 find_package(Threads REQUIRED)
 find_package(OpenMP QUIET)
 find_package(GTest CONFIG QUIET)
-find_package(PkgConfig)
-find_package(boost_log CONFIG QUIET)
-find_package(boost_log_setup CONFIG QUIET)
-find_package(Boost REQUIRED COMPONENTS system beast log regex)
-find_package(boost_json CONFIG QUIET)
+find_package(Boost REQUIRED COMPONENTS system beast log log_setup regex)
 
 include(GoogleTest)
 
@@ -42,32 +38,33 @@ add_library(book_service STATIC
   src/http_server.cpp
 )
 target_include_directories(book_service PUBLIC src)
-target_compile_features(book_service PUBLIC cxx_std_20)
 
 # Link basic deps per-target
 target_link_libraries(book_service PRIVATE Threads::Threads)
 
+add_library(project_boost_deps INTERFACE)
+
 # Prefer imported Boost targets when available
 if(TARGET Boost::system)
-  if(TARGET Boost::system)
-    target_link_libraries(book_service PRIVATE Boost::system)
-  endif()
+  target_link_libraries(project_boost_deps INTERFACE Boost::system)
   if(TARGET Boost::beast)
-    target_link_libraries(book_service PRIVATE Boost::beast)
+    target_link_libraries(project_boost_deps INTERFACE Boost::beast)
   endif()
   if(TARGET Boost::json)
-    target_link_libraries(book_service PRIVATE Boost::json)
+    target_link_libraries(project_boost_deps INTERFACE Boost::json)
   endif()
   if(TARGET Boost::log)
-    target_link_libraries(book_service PRIVATE Boost::log)
+    target_link_libraries(project_boost_deps INTERFACE Boost::log)
   endif()
   if(TARGET Boost::log_setup)
-    target_link_libraries(book_service PRIVATE Boost::log_setup)
-  endif()  
+    target_link_libraries(project_boost_deps INTERFACE Boost::log_setup)
+  endif()
 else()
-  target_link_libraries(book_service PRIVATE ${Boost_LIBRARIES})
-  target_include_directories(book_service PRIVATE ${Boost_INCLUDE_DIRS})
+  target_link_libraries(project_boost_deps INTERFACE ${Boost_LIBRARIES})
+  target_include_directories(project_boost_deps INTERFACE ${Boost_INCLUDE_DIRS})
 endif()
+
+target_link_libraries(book_service PRIVATE project_boost_deps)
 
 # Apply sanitizer per-target if requested
 target_compile_options(book_service PRIVATE
@@ -77,29 +74,12 @@ target_link_options(book_service PRIVATE
   "$<$<BOOL:${ENABLE_ADDRESS_SANITIZER}>:${SANITIZE_LINK_FLAGS}>"
 )
 
-add_executable(server src/main.cpp src/http_server.cpp)
-target_compile_features(server PRIVATE cxx_std_20)
+add_executable(server src/main.cpp)
 target_link_libraries(server PRIVATE book_service)
 if(OpenMP_CXX_FOUND)
   target_link_libraries(server PRIVATE OpenMP::OpenMP_CXX)
 endif()
-if(TARGET Boost::system)
-  if(TARGET Boost::system)
-    target_link_libraries(server PRIVATE Boost::system)
-  endif()
-  if(TARGET Boost::beast)
-    target_link_libraries(server PRIVATE Boost::beast)
-  endif()
-  if(TARGET Boost::json)
-    target_link_libraries(server PRIVATE Boost::json)
-  endif()
-  if(TARGET Boost::log)
-    target_link_libraries(server PRIVATE Boost::log)
-  endif()
-  if(TARGET Boost::log_setup)
-    target_link_libraries(server PRIVATE Boost::log_setup)
-  endif()  
-endif()
+target_link_libraries(server PRIVATE project_boost_deps)
 
 add_executable(tests tests/test_repository.cpp 
   tests/test_repository_update.cpp 
@@ -109,34 +89,13 @@ add_executable(tests tests/test_repository.cpp
   tests/test_http_utils.cpp   
   tests/test_http_server_put_edgecases.cpp)
 
-target_compile_features(tests PRIVATE cxx_std_20)
 target_link_libraries(tests PRIVATE book_service)
 if(TARGET GTest::gtest_main)
   target_link_libraries(tests PRIVATE GTest::gtest_main)
 elseif(TARGET GTest::gmock_main)
   target_link_libraries(tests PRIVATE GTest::gmock_main)
 endif()
-
-if(TARGET Boost::system)
-  if(TARGET Boost::system)
-    target_link_libraries(tests PRIVATE Boost::system)
-  endif()
-  if(TARGET Boost::beast)
-    target_link_libraries(tests PRIVATE Boost::beast)
-  endif()
-  if(TARGET Boost::json)
-    target_link_libraries(tests PRIVATE Boost::json)
-  endif()
-  if(TARGET Boost::log)
-    target_link_libraries(tests PRIVATE Boost::log)
-  endif()
-  if(TARGET Boost::log_setup)
-    target_link_libraries(tests PRIVATE Boost::log_setup)
-  endif()  
-else()
-  target_link_libraries(tests PRIVATE ${Boost_LIBRARIES})
-  target_include_directories(tests PRIVATE ${Boost_INCLUDE_DIRS})
-endif()
+target_link_libraries(tests PRIVATE project_boost_deps)
 
 gtest_discover_tests(tests)
 

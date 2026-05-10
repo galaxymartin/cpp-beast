@@ -1,8 +1,14 @@
 {
     "version": 2,
+    "cmakeMinimumRequired": {
+        "major": 4,
+        "minor": 3,
+        "patch": 0
+    },
     "configurePresets": [
         {
             "name": "default",
+            "hidden": true,
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build/${presetName}",
             "cacheVariables": {
@@ -10,15 +16,24 @@
             }
         },
         {
-            "name": "GCC-16.1-debug",
-            "displayName": "GCC 16.1.0 x86_64-redhat-linux (Debug)",
+            "name": "gcc-base",
+            "hidden": true,
             "inherits": [
                 "default"
             ],
-            "description": "Using compilers: C = /usr/bin/gcc, CXX = /usr/bin/g++",            
+            "description": "Using compiler: CXX = /usr/bin/g++",
             "cacheVariables": {
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/install/${presetName}",               
-                "CMAKE_CXX_COMPILER": "/usr/bin/g++",
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/install/${presetName}",
+                "CMAKE_CXX_COMPILER": "/usr/bin/g++"
+            }
+        },
+        {
+            "name": "GCC-16.1-debug",
+            "displayName": "GCC 16.1.0 x86_64-redhat-linux (Debug)",
+            "inherits": [
+                "gcc-base"
+            ],
+            "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug"         
             }
         },
@@ -26,12 +41,9 @@
             "name": "GCC-16.1-release",
             "displayName": "GCC 16.1.0 x86_64-redhat-linux (Release)",
             "inherits": [
-                "default"
+                "gcc-base"
             ],
-            "description": "Using compilers: C = /usr/bin/gcc, CXX = /usr/bin/g++",            
             "cacheVariables": {
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/install/${presetName}",               
-                "CMAKE_CXX_COMPILER": "/usr/bin/g++",
                 "CMAKE_BUILD_TYPE": "Release"         
             }
         }
