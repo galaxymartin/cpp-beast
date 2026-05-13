@@ -1,8 +1,9 @@
 #include <gtest/gtest.h>
-#include "book_repository.hpp"
 #include <filesystem>
 #include <fstream>
 #include <unistd.h>
+
+#include "book_repository.hpp"
 
 TEST(Persistence, SaveAndLoad) {
   auto tmp = std::filesystem::temp_directory_path() / ("books_test_" + std::to_string(getpid()) + ".json");

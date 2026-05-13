@@ -1,7 +1,7 @@
 {
-  "name": "cpp-playground",
+  "name": "cpp-beast",
   "version": "1.0.1",
-  "builtin-baseline": "56bb2411609227288b70117ead2c47585ba07713",
+  "builtin-baseline": "082b32b6c5de20fd01f61dfaa9856fcba849e73e",
   "dependencies": [
     "boost-asio",
     "boost-json",

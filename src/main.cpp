@@ -1,6 +1,3 @@
-#include "http_server.hpp"
-#include "book_repository.hpp"
-#include "logging.hpp"
 #include <iostream>
 #include <charconv>
 #include <cstring>
@@ -18,6 +15,10 @@
 #if defined(_WIN32)
 #include <windows.h>
 #endif
+
+#include "http_server.hpp"
+#include "book_repository.hpp"
+#include "logging.hpp"
 
 int main(int argc, char **argv)
 {

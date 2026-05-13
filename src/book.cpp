@@ -1,5 +1,6 @@
-#include "book.hpp"
 #include <boost/log/trivial.hpp>
+
+#include "book.hpp"
 
 void to_json(boost::json::value& jv, Book const& b) {
   jv = {

@@ -1,8 +1,9 @@
 #include <gtest/gtest.h>
-#include "http_server.hpp"
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
 #include <thread>
+
+#include "http_server.hpp"
 
 namespace net = boost::asio;
 

@@ -1,8 +1,9 @@
 #pragma once
 
-#include "book_repository.hpp"
 #include <boost/asio.hpp>
 #include <memory>
+
+#include "book_repository.hpp"
 
 // Control handle returned by `start_server` allowing programmatic shutdown.
 struct ServerControl {

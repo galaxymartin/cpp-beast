@@ -1,10 +1,11 @@
 #pragma once
 
-#include "book.hpp"
 #include <optional>
 #include <vector>
 #include <unordered_map>
 #include <shared_mutex>
+
+#include "book.hpp"
 
 class BookRepository {
 public:

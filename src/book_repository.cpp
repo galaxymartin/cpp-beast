@@ -1,9 +1,10 @@
-#include "book_repository.hpp"
 #include <fstream>
 #include <filesystem>
 #include <boost/json/src.hpp>
 #include <boost/json.hpp>
 #include <boost/log/trivial.hpp>
+
+#include "book_repository.hpp"
 
 Book BookRepository::add(Book b) {
   std::unique_lock lock(mutex_);

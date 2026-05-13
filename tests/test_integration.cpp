@@ -1,11 +1,12 @@
 #include <gtest/gtest.h>
-#include "book_repository.hpp"
-#include "http_server.hpp"
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
 #include <thread>
 #include <chrono>
 #include <string>
+
+#include "book_repository.hpp"
+#include "http_server.hpp"
 
 namespace beast = boost::beast;
 namespace http = beast::http;
